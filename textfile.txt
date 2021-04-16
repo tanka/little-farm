@@ -1,0 +1,1 @@
+current readings from source mostly 54.(50-57)  one instance it reached 101.
