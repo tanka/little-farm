@@ -14,6 +14,10 @@
 #include <ESPAsyncWiFiManager.h> //https://github.com/tzapu/WiFiManager WiFi Configuration Magic
 #include <ESPmDNS.h>
 
+#include <WiFiClientSecure.h> //TLS protocol
+#include <PubSubClient.h>
+#include <Wire.h>
+
 #define DHTPIN 4      // what pin we're connected to
 #define DHTTYPE DHT22 // DHT 22  (AM2302)
 
@@ -21,8 +25,8 @@
 const int analogSoilMoistureInPin = 34;
 
 // set pin numbers
-const int valveOutPin = 26; // the number of the valve pin
-const int pumpOutPin = 5;   // the number of the pump pin
+const int valvePin = 26; // the number of the valve pin
+const int pumpPin = 5;   // the number of the pump pin
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -48,6 +52,119 @@ int reading_air_humidity = 0;
 int reading_N = 0;
 int reading_P = 0;
 int reading_K = 0;
+
+// MQTT PART //
+// Change the variable to your Raspberry Pi IP address, so it connects to your MQTT broker
+const char* mqtt_server = "192.168.1.174";
+WiFiClientSecure espClient;
+PubSubClient client(espClient);
+
+// Timers auxiliar variables
+long now = millis();
+long lastMeasure = 0;
+
+void callback(String topic, byte* message, unsigned int length);
+
+// This functions is executed when some device publishes a message to a topic that your ESP8266 is subscribed to
+// Change the function below to add logic to your program, so when a device publishes a message to a topic that 
+// your ESP8266 is subscribed you can actually do something
+void callback(String topic, byte* message, unsigned int length) {
+  Serial.print("Message arrived on topic: ");
+  Serial.print(topic);
+  Serial.print(". Message: ");
+  String messageTemp;
+  
+  for (int i = 0; i < length; i++) {
+    Serial.print((char)message[i]);
+    messageTemp += (char)message[i];
+  }
+  Serial.println();
+
+  // Feel free to add more if statements to control more GPIOs with MQTT
+
+  // If a message is received on the topic, you check if the message is either on or off. Turns the lamp GPIO according to the message
+  if(topic=="pump/full" && messageTemp == "on"){
+      Serial.print("Opening valve to release 1L of water... ");
+        Serial.println("activating pump for 30s");
+        digitalWrite(pumpPin, HIGH);
+        Serial.println("water flowing");
+        delay(30000);
+        Serial.println("deactivating pump");
+        digitalWrite(pumpPin, LOW);
+        Serial.println("water NOT flowing");
+  }
+  if(topic=="pump/half" && messageTemp == "on"){
+      Serial.print("Opening valve to release 0.5L of water... ");
+        Serial.println("activating pump for 15s");
+        digitalWrite(pumpPin, HIGH);
+        Serial.println("water flowing");
+        delay(15000);
+        Serial.println("deactivating pump");
+        digitalWrite(pumpPin, LOW);
+        Serial.println("water NOT flowing");
+  }
+  if(topic=="valve/10" && messageTemp == "on"){
+      Serial.print("Opening valve to release 10mL of NPK... ");
+        Serial.println("opening valve for 10s");
+        digitalWrite(valvePin, HIGH);
+        Serial.println("NPK flowing");
+        delay(10000);
+        Serial.println("closing valve");
+        digitalWrite(valvePin, LOW);
+        Serial.println("NPK NOT flowing");
+  }
+  if(topic=="valve/5" && messageTemp == "on"){
+      Serial.print("Opening valve to release 5mL of NPK... ");
+        Serial.println("opening valve for 5s");
+        digitalWrite(valvePin, HIGH);
+        Serial.println("NPK flowing");
+        delay(5000);
+        Serial.println("closing valve");
+        digitalWrite(valvePin, LOW);
+        Serial.println("NPK NOT flowing");
+  }
+  Serial.println();
+}
+
+// This functions reconnects your ESP8266 to your MQTT broker
+// Change the function below if you want to subscribe to more topics with your ESP8266 
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    /*
+     YOU MIGHT NEED TO CHANGE THIS LINE, IF YOU'RE HAVING PROBLEMS WITH MQTT MULTIPLE CONNECTIONS
+     To change the ESP device ID, you will have to give a new name to the ESP8266.
+     Here's how it looks:
+       if (client.connect("ESP8266Client")) {
+     You can do it like this:
+       if (client.connect("ESP1_Office")) {
+     Then, for the other ESP:
+       if (client.connect("ESP2_Garage")) {
+      That should solve your MQTT multiple connections problem
+    */
+    if (client.connect("ESP8266Client")) {
+      Serial.println("connected");  
+      // Subscribe or resubscribe to a topic
+      // You can subscribe to more topics (to control more LEDs in this example)
+      client.subscribe("pump/full"); //change this
+      client.subscribe("pump/half"); //change this
+      client.subscribe("valve/10"); //change this
+      client.subscribe("valve/5"); //change this
+      Serial.println("subscribed to pump and valve"); 
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
+// end of MQTT PART //
+
 
 const char *host = "littlefarm"; // set hostname. access as http://terracefarming.local
 
@@ -91,12 +208,31 @@ void setup()
   dht.begin();
 
   // initialize the valve pin as an output
-  pinMode(valveOutPin, OUTPUT);
-  pinMode(pumpOutPin, OUTPUT);
+  pinMode(valvePin, OUTPUT);
+  pinMode(pumpPin, OUTPUT);
+
+  // For MQTT
+  /* set SSL/TLS certificate */
+  espClient.setCACert(ca_cert);
+  espClient.setCertificate(device001_cert);
+  espClient.setPrivateKey(device001_key);
+
+  client.setServer(mqtt_server, 8883);
+  client.setCallback(callback);
 }
+
 long lastupdate;
 void loop()
 {
+
+  //Serial.println(addTwoInts(1,4));
+  
+  if (!client.connected()) {
+    reconnect();
+  }
+  if(!client.loop())
+    client.connect("ESP8266Client");
+
   if (millis() > lastupdate + 5000)
   {
     lastupdate = millis();
@@ -115,13 +251,37 @@ void loop()
     Serial.println(reading_air_temp);
 
     // generating values for N, P, K parameters
-    reading_N = nitrogen(mod);
+    reading_N = nitrogen(&mod);
     delay(250);
-    reading_P = phosphorous(mod);
+    reading_P = phosphorous(&mod);
     delay(250);
-    reading_K = potassium(mod);
+    reading_K = potassium(&mod);
     delay(250);
 
     printNPK(reading_N, reading_P, reading_K);
+
+    // publishing the values to MQTT
+
+    static char reading_air_temp_str[10]="\0";
+    static char reading_air_humidity_str[10]="\0";
+    static char reading_soil_moisture_str[10]="\0";
+    static char reading_N_str[10]="\0";
+    static char reading_P_str[10]="\0";
+    static char reading_K_str[10]="\0";
+    itoa(reading_air_temp, reading_air_temp_str, 10);
+    itoa(reading_air_humidity, reading_air_humidity_str, 10);
+    itoa(reading_soil_moisture, reading_soil_moisture_str, 10);
+    itoa(reading_N, reading_N_str, 10);
+    itoa(reading_P, reading_P_str, 10);
+    itoa(reading_K, reading_K_str, 10);
+    // air param
+    client.publish("littlefarm/temp", reading_air_temp_str);
+    client.publish("littlefarm/hum", reading_air_humidity_str);
+
+    // // soil param
+    client.publish("littlefarm/mois", reading_soil_moisture_str);
+    client.publish("littlefarm/n", reading_N_str);
+    client.publish("littlefarm/p", reading_P_str);
+    client.publish("littlefarm/k", reading_K_str);
   }
 }
