@@ -55,7 +55,7 @@ int reading_K = 0;
 
 // MQTT PART //
 // Change the variable to your Raspberry Pi IP address, so it connects to your MQTT broker
-const char* mqtt_server = "192.168.1.174";
+const char *mqtt_server = "192.168.1.174";
 WiFiClientSecure espClient;
 PubSubClient client(espClient);
 
@@ -63,18 +63,20 @@ PubSubClient client(espClient);
 long now = millis();
 long lastMeasure = 0;
 
-void callback(String topic, byte* message, unsigned int length);
+void callback(String topic, byte *message, unsigned int length);
 
 // This functions is executed when some device publishes a message to a topic that your ESP8266 is subscribed to
-// Change the function below to add logic to your program, so when a device publishes a message to a topic that 
+// Change the function below to add logic to your program, so when a device publishes a message to a topic that
 // your ESP8266 is subscribed you can actually do something
-void callback(String topic, byte* message, unsigned int length) {
+void callback(String topic, byte *message, unsigned int length)
+{
   Serial.print("Message arrived on topic: ");
   Serial.print(topic);
   Serial.print(". Message: ");
   String messageTemp;
-  
-  for (int i = 0; i < length; i++) {
+
+  for (int i = 0; i < length; i++)
+  {
     Serial.print((char)message[i]);
     messageTemp += (char)message[i];
   }
@@ -83,54 +85,60 @@ void callback(String topic, byte* message, unsigned int length) {
   // Feel free to add more if statements to control more GPIOs with MQTT
 
   // If a message is received on the topic, you check if the message is either on or off. Turns the lamp GPIO according to the message
-  if(topic=="pump/full" && messageTemp == "on"){
-      Serial.print("Opening valve to release 1L of water... ");
-        Serial.println("activating pump for 30s");
-        digitalWrite(pumpPin, HIGH);
-        Serial.println("water flowing");
-        delay(30000);
-        Serial.println("deactivating pump");
-        digitalWrite(pumpPin, LOW);
-        Serial.println("water NOT flowing");
+  if (topic == "pump/full" && messageTemp == "on")
+  {
+    Serial.print("Opening valve to release 1L of water... ");
+    Serial.println("activating pump for 30s");
+    digitalWrite(pumpPin, HIGH);
+    Serial.println("water flowing");
+    delay(30000);
+    Serial.println("deactivating pump");
+    digitalWrite(pumpPin, LOW);
+    Serial.println("water NOT flowing");
   }
-  if(topic=="pump/half" && messageTemp == "on"){
-      Serial.print("Opening valve to release 0.5L of water... ");
-        Serial.println("activating pump for 15s");
-        digitalWrite(pumpPin, HIGH);
-        Serial.println("water flowing");
-        delay(15000);
-        Serial.println("deactivating pump");
-        digitalWrite(pumpPin, LOW);
-        Serial.println("water NOT flowing");
+  if (topic == "pump/half" && messageTemp == "on")
+  {
+    Serial.print("Opening valve to release 0.5L of water... ");
+    Serial.println("activating pump for 15s");
+    digitalWrite(pumpPin, HIGH);
+    Serial.println("water flowing");
+    delay(15000);
+    Serial.println("deactivating pump");
+    digitalWrite(pumpPin, LOW);
+    Serial.println("water NOT flowing");
   }
-  if(topic=="valve/10" && messageTemp == "on"){
-      Serial.print("Opening valve to release 10mL of NPK... ");
-        Serial.println("opening valve for 10s");
-        digitalWrite(valvePin, HIGH);
-        Serial.println("NPK flowing");
-        delay(10000);
-        Serial.println("closing valve");
-        digitalWrite(valvePin, LOW);
-        Serial.println("NPK NOT flowing");
+  if (topic == "valve/10" && messageTemp == "on")
+  {
+    Serial.print("Opening valve to release 10mL of NPK... ");
+    Serial.println("opening valve for 10s");
+    digitalWrite(valvePin, HIGH);
+    Serial.println("NPK flowing");
+    delay(10000);
+    Serial.println("closing valve");
+    digitalWrite(valvePin, LOW);
+    Serial.println("NPK NOT flowing");
   }
-  if(topic=="valve/5" && messageTemp == "on"){
-      Serial.print("Opening valve to release 5mL of NPK... ");
-        Serial.println("opening valve for 5s");
-        digitalWrite(valvePin, HIGH);
-        Serial.println("NPK flowing");
-        delay(5000);
-        Serial.println("closing valve");
-        digitalWrite(valvePin, LOW);
-        Serial.println("NPK NOT flowing");
+  if (topic == "valve/5" && messageTemp == "on")
+  {
+    Serial.print("Opening valve to release 5mL of NPK... ");
+    Serial.println("opening valve for 5s");
+    digitalWrite(valvePin, HIGH);
+    Serial.println("NPK flowing");
+    delay(5000);
+    Serial.println("closing valve");
+    digitalWrite(valvePin, LOW);
+    Serial.println("NPK NOT flowing");
   }
   Serial.println();
 }
 
 // This functions reconnects your ESP8266 to your MQTT broker
-// Change the function below if you want to subscribe to more topics with your ESP8266 
-void reconnect() {
+// Change the function below if you want to subscribe to more topics with your ESP8266
+void reconnect()
+{
   // Loop until we're reconnected
-  while (!client.connected()) {
+  while (!client.connected())
+  {
     Serial.print("Attempting MQTT connection...");
     // Attempt to connect
     /*
@@ -144,16 +152,19 @@ void reconnect() {
        if (client.connect("ESP2_Garage")) {
       That should solve your MQTT multiple connections problem
     */
-    if (client.connect("ESP8266Client")) {
-      Serial.println("connected");  
+    if (client.connect("ESP8266Client"))
+    {
+      Serial.println("connected");
       // Subscribe or resubscribe to a topic
       // You can subscribe to more topics (to control more LEDs in this example)
       client.subscribe("pump/full"); //change this
       client.subscribe("pump/half"); //change this
-      client.subscribe("valve/10"); //change this
-      client.subscribe("valve/5"); //change this
-      Serial.println("subscribed to pump and valve"); 
-    } else {
+      client.subscribe("valve/10");  //change this
+      client.subscribe("valve/5");   //change this
+      Serial.println("subscribed to pump and valve");
+    }
+    else
+    {
       Serial.print("failed, rc=");
       Serial.print(client.state());
       Serial.println(" try again in 5 seconds");
@@ -164,7 +175,6 @@ void reconnect() {
 }
 
 // end of MQTT PART //
-
 
 const char *host = "littlefarm"; // set hostname. access as http://terracefarming.local
 
@@ -181,7 +191,8 @@ void setup()
   delay(10);
 
   delay(200);
-   if (!MDNS.begin(host))  {
+  if (!MDNS.begin(host))
+  {
     Serial.println("Error starting mDNS");
     return;
   }
@@ -222,15 +233,18 @@ void setup()
 }
 
 long lastupdate;
+int threshold_N = 30, threshold_P = 9, threshold_K = 5, threshold_soil_moisture = 20;
+bool initflag = true;
 void loop()
 {
 
   //Serial.println(addTwoInts(1,4));
-  
-  if (!client.connected()) {
+
+  if (!client.connected())
+  {
     reconnect();
   }
-  if(!client.loop())
+  if (!client.loop())
     client.connect("ESP8266Client");
 
   if (millis() > lastupdate + 5000)
@@ -251,6 +265,7 @@ void loop()
     Serial.println(reading_air_temp);
 
     // generating values for N, P, K parameters
+    delay(250);
     reading_N = nitrogen(&mod);
     delay(250);
     reading_P = phosphorous(&mod);
@@ -261,27 +276,45 @@ void loop()
     printNPK(reading_N, reading_P, reading_K);
 
     // publishing the values to MQTT
+    if (!initflag){
+      static char reading_air_temp_str[10] = "\0";
+      static char reading_air_humidity_str[10] = "\0";
+      static char reading_soil_moisture_str[10] = "\0";
+      static char reading_N_str[10] = "\0";
+      static char reading_P_str[10] = "\0";
+      static char reading_K_str[10] = "\0";
+      itoa(reading_air_temp, reading_air_temp_str, 10);
+      itoa(reading_air_humidity, reading_air_humidity_str, 10);
+      itoa(reading_soil_moisture, reading_soil_moisture_str, 10);
+      itoa(reading_N, reading_N_str, 10);
+      itoa(reading_P, reading_P_str, 10);
+      itoa(reading_K, reading_K_str, 10);
+      // air param
+      client.publish("littlefarm/temp", reading_air_temp_str);
+      client.publish("littlefarm/hum", reading_air_humidity_str);
+      // // soil param
+      client.publish("littlefarm/mois", reading_soil_moisture_str);
+      client.publish("littlefarm/n", reading_N_str);
+      client.publish("littlefarm/p", reading_P_str);
+      client.publish("littlefarm/k", reading_K_str);
 
-    static char reading_air_temp_str[10]="\0";
-    static char reading_air_humidity_str[10]="\0";
-    static char reading_soil_moisture_str[10]="\0";
-    static char reading_N_str[10]="\0";
-    static char reading_P_str[10]="\0";
-    static char reading_K_str[10]="\0";
-    itoa(reading_air_temp, reading_air_temp_str, 10);
-    itoa(reading_air_humidity, reading_air_humidity_str, 10);
-    itoa(reading_soil_moisture, reading_soil_moisture_str, 10);
-    itoa(reading_N, reading_N_str, 10);
-    itoa(reading_P, reading_P_str, 10);
-    itoa(reading_K, reading_K_str, 10);
-    // air param
-    client.publish("littlefarm/temp", reading_air_temp_str);
-    client.publish("littlefarm/hum", reading_air_humidity_str);
-
-    // // soil param
-    client.publish("littlefarm/mois", reading_soil_moisture_str);
-    client.publish("littlefarm/n", reading_N_str);
-    client.publish("littlefarm/p", reading_P_str);
-    client.publish("littlefarm/k", reading_K_str);
+      if ((threshold_N - 8 > reading_N) && (threshold_P - 3 > reading_P) && (threshold_K - 3 > reading_K))
+      {
+        client.publish("littlefarm/msg", "Deficit : Nitrogen, Potassium and Phosphorous.  Suggested to add NPK");
+      }
+      else if (threshold_N - 8 > reading_N)
+      {
+        client.publish("littlefarm/msg", "Deficit : Nitrogen. Suggested to add NPK");
+      }
+      else if (threshold_P - 3 > reading_P)
+      {
+        client.publish("littlefarm/msg", "Deficit : Phosphorous.  Suggested to add NPK");
+      }
+      else if (threshold_K - 3 > reading_K)
+      {
+        client.publish("littlefarm/msg", "Deficit : Potassium.  Suggested to add NPK");
+      }
+    }
+    initflag =false;
   }
 }
