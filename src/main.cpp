@@ -1,7 +1,6 @@
 #include "utility.h"
 #include <Wire.h>
 #include "ArduinoJson.h"
-#include "humiditySensor.h"
 #include "webpage.h"
 #include "DHT.h"
 #if defined(ESP8266)
@@ -25,8 +24,9 @@
 const int analogSoilMoistureInPin = 34;
 
 // set pin numbers
-const int valvePin = 26; // the number of the valve pin
-const int pumpPin = 5;   // the number of the pump pin
+const int valvePin = 26;     // the number of the valve pin
+const int pumpPin = 5;       // the number of the pump pin
+const int solarVoltPin = 35; // the number of the valve pin
 
 DHT dht(DHTPIN, DHTTYPE);
 
@@ -53,6 +53,14 @@ int reading_N = 0;
 int reading_P = 0;
 int reading_K = 0;
 
+// deep sleep implementation prameters
+#define uS_TO_S_FACTOR 1000000 /* Conversion factor for micro seconds to seconds */
+#define TIME_TO_SLEEP 600      /* Time ESP32 will go to sleep (in seconds) */
+long sleepTime;
+
+RTC_DATA_ATTR int bootCount = 0;
+// deep sleep -- end
+
 // MQTT PART //
 // Change the variable to your Raspberry Pi IP address, so it connects to your MQTT broker
 const char *mqtt_server = "192.168.1.174";
@@ -62,6 +70,7 @@ PubSubClient client(espClient);
 // Timers auxiliar variables
 long now = millis();
 long lastMeasure = 0;
+bool sleepEnable = true;
 
 void callback(String topic, byte *message, unsigned int length);
 
@@ -87,44 +96,61 @@ void callback(String topic, byte *message, unsigned int length)
   // If a message is received on the topic, you check if the message is either on or off. Turns the lamp GPIO according to the message
   if (topic == "pump/full" && messageTemp == "on")
   {
+    sleepEnable = false;
     Serial.print("Opening valve to release 1L of water... ");
     Serial.println("activating pump for 30s");
     digitalWrite(pumpPin, HIGH);
     Serial.println("water flowing");
-    delay(30000);
+    long timeDelay = millis();  
+    while (millis()<timeDelay +60000)
+    {digitalWrite(pumpPin, HIGH);}
+
+    sleepEnable = true;
     Serial.println("deactivating pump");
     digitalWrite(pumpPin, LOW);
     Serial.println("water NOT flowing");
   }
   if (topic == "pump/half" && messageTemp == "on")
   {
+    sleepEnable = false;
     Serial.print("Opening valve to release 0.5L of water... ");
     Serial.println("activating pump for 15s");
     digitalWrite(pumpPin, HIGH);
     Serial.println("water flowing");
-    delay(15000);
+    long timeDelay = millis();  
+    while (millis()<timeDelay +20000)
+    {digitalWrite(pumpPin, HIGH);}
+    sleepEnable = true;
     Serial.println("deactivating pump");
     digitalWrite(pumpPin, LOW);
     Serial.println("water NOT flowing");
   }
   if (topic == "valve/10" && messageTemp == "on")
   {
+    sleepEnable = false;
     Serial.print("Opening valve to release 10mL of NPK... ");
     Serial.println("opening valve for 10s");
     digitalWrite(valvePin, HIGH);
     Serial.println("NPK flowing");
-    delay(10000);
+    long timeDelay = millis();  
+    while (millis()<timeDelay +15000)
+    {digitalWrite(valvePin, HIGH);}
+    sleepEnable = true;
     Serial.println("closing valve");
     digitalWrite(valvePin, LOW);
     Serial.println("NPK NOT flowing");
   }
   if (topic == "valve/5" && messageTemp == "on")
   {
+    sleepEnable = false;
     Serial.print("Opening valve to release 5mL of NPK... ");
     Serial.println("opening valve for 5s");
     digitalWrite(valvePin, HIGH);
     Serial.println("NPK flowing");
-    delay(5000);
+    long timeDelay = millis();  
+    while (millis()<timeDelay +7000)
+    {digitalWrite(valvePin, HIGH);}
+    sleepEnable = true;
     Serial.println("closing valve");
     digitalWrite(valvePin, LOW);
     Serial.println("NPK NOT flowing");
@@ -201,7 +227,7 @@ void setup()
   WiFi.mode(WIFI_STA);
 
   AsyncWiFiManager wm(&server, &dns);
-  wm.resetSettings();
+  // wm.resetSettings();
   bool res;
   res = wm.autoConnect("little_farm_AP", "password"); // password protected ap
   Serial.println("connected...to wifi :)");
@@ -222,6 +248,9 @@ void setup()
   pinMode(valvePin, OUTPUT);
   pinMode(pumpPin, OUTPUT);
 
+   digitalWrite(pumpPin, LOW);
+   digitalWrite(valvePin, LOW);
+
   // For MQTT
   /* set SSL/TLS certificate */
   espClient.setCACert(ca_cert);
@@ -230,15 +259,23 @@ void setup()
 
   client.setServer(mqtt_server, 8883);
   client.setCallback(callback);
+
+  // Deep sleep enabling
+  esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
+  sleepTime = millis();
+  //deep sleep end
 }
 
 long lastupdate;
-int threshold_N = 30, threshold_P = 9, threshold_K = 5, threshold_soil_moisture = 20;
+int threshold_N = 25, threshold_P = 9, threshold_K = 5, threshold_soil_moisture = 20;
 bool initflag = true;
+bool readNPK = false;
+
+float rawVoltsValue;
+float solarVoltage;
+
 void loop()
 {
-
-  //Serial.println(addTwoInts(1,4));
 
   if (!client.connected())
   {
@@ -249,9 +286,11 @@ void loop()
 
   if (millis() > lastupdate + 5000)
   {
+    digitalWrite(pumpPin, LOW);
+    digitalWrite(valvePin, LOW);
     lastupdate = millis();
-    Serial.println(reading_soil_moisture);
 
+    reading_soil_moisture = soilMoisture(analogSoilMoistureInPin);
     // Reading temperature or humidity takes about 250 milliseconds!
     // Sensor readings may also be up to 2 seconds 'old' (its a very slow sensor)
     reading_air_humidity = dht.readHumidity();
@@ -259,41 +298,63 @@ void loop()
     // Read temperature as Celsius
     reading_air_temp = dht.readTemperature();
     // reading_air_temp =reading_soil_moisture + 60;
-    Serial.print("Air temperature and Humidity ");
+    Serial.print("Air temperature and Humidity: ");
     Serial.print(reading_air_humidity);
     Serial.print(" ");
     Serial.println(reading_air_temp);
 
     // generating values for N, P, K parameters
-    delay(250);
-    reading_N = nitrogen(&mod);
-    delay(250);
-    reading_P = phosphorous(&mod);
-    delay(250);
-    reading_K = potassium(&mod);
-    delay(250);
+    rawVoltsValue = analogRead(solarVoltPin);
+    solarVoltage = (rawVoltsValue * 6) / 4096;
 
-    printNPK(reading_N, reading_P, reading_K);
+    Serial.print("analog value of pin value :");
+    Serial.println(rawVoltsValue);
+    Serial.print("in terms of Volts pin value :");
+    Serial.println(solarVoltage);
+    if (solarVoltage >= 2.25)
+    {
+      delay(250);
+      reading_N = nitrogen(&mod);
+      delay(250);
+      reading_P = phosphorous(&mod);
+      delay(250);
+      reading_K = potassium(&mod);
+      delay(250);
 
+      readNPK = true;
+      printNPK(reading_N, reading_P, reading_K);
+    }
     // publishing the values to MQTT
-    if (!initflag){
-      static char reading_air_temp_str[10] = "\0";
-      static char reading_air_humidity_str[10] = "\0";
-      static char reading_soil_moisture_str[10] = "\0";
+
+    static char reading_air_temp_str[10] = "\0";
+    static char reading_air_humidity_str[10] = "\0";
+    static char reading_soil_moisture_str[10] = "\0";
+    itoa(reading_air_temp, reading_air_temp_str, 10);
+    itoa(reading_air_humidity, reading_air_humidity_str, 10);
+    itoa(reading_soil_moisture, reading_soil_moisture_str, 10);
+    // air param
+    if (reading_air_humidity < 100 && reading_air_temp < 100)
+    {
+      client.publish("littlefarm/temp", reading_air_temp_str);
+      client.publish("littlefarm/hum", reading_air_humidity_str);
+    }
+    else
+    {
+      client.publish("littlefarm/msg", "out of threshold");
+    }
+
+    // // soil param
+    client.publish("littlefarm/mois", reading_soil_moisture_str);
+
+    if (readNPK)
+    {
       static char reading_N_str[10] = "\0";
       static char reading_P_str[10] = "\0";
       static char reading_K_str[10] = "\0";
-      itoa(reading_air_temp, reading_air_temp_str, 10);
-      itoa(reading_air_humidity, reading_air_humidity_str, 10);
-      itoa(reading_soil_moisture, reading_soil_moisture_str, 10);
       itoa(reading_N, reading_N_str, 10);
       itoa(reading_P, reading_P_str, 10);
       itoa(reading_K, reading_K_str, 10);
-      // air param
-      client.publish("littlefarm/temp", reading_air_temp_str);
-      client.publish("littlefarm/hum", reading_air_humidity_str);
-      // // soil param
-      client.publish("littlefarm/mois", reading_soil_moisture_str);
+
       client.publish("littlefarm/n", reading_N_str);
       client.publish("littlefarm/p", reading_P_str);
       client.publish("littlefarm/k", reading_K_str);
@@ -314,7 +375,17 @@ void loop()
       {
         client.publish("littlefarm/msg", "Deficit : Potassium.  Suggested to add NPK");
       }
+      readNPK = false;
     }
-    initflag =false;
+    // Deep sleep after 60s of bing on
+    //Serial.println("1 min gap for actuation");
+    client.publish("littlefarm/awake", "awake");
+    if (sleepEnable && (millis() > sleepTime + 60000) )
+    {
+      client.publish("littlefarm/sleep", "sleep");
+      Serial.println("going to sleep");
+      delay(2000);
+      esp_deep_sleep_start();
+    }
   }
 }
